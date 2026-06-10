@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <title>Gestiune Restaurant</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; background-color: #f0f2f5; padding: 20px; color: #333; }
+        .container { max-width: 1300px; margin: 0 auto; background: white; padding: 25px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h1 { text-align: center; border-bottom: 2px solid #0056b3; padding-bottom: 15px; margin-bottom: 25px; color: #004494; }
+        .menu-bar { background-color: #e9ecef; padding: 15px; border-radius: 5px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #ced4da; }
+        .menu-group { display: flex; gap: 10px; align-items: center; }
+        label { font-weight: bold; margin-right: 5px; }
+        select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; color: white; }
+        .btn-green { background-color: #28a745; } .btn-green:hover { background-color: #218838; }
+        .btn-edit { background-color: #ffc107; color: black; } .btn-edit:hover { background-color: #e0a800; }
+        .btn-delete { background-color: #dc3545; } .btn-delete:hover { background-color: #c82333; }
+        .btn-save { background-color: #28a745; } .btn-cancel { background-color: #6c757d; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #dee2e6; padding: 10px; text-align: left; font-size: 14px; }
+        th { background-color: #343a40; color: white; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        .edit-input { width: 90%; padding: 5px; border: 1px solid #007bff; border-radius: 3px; }
+        #status-area { text-align: center; margin-top: 10px; font-weight: bold; color: #0056b3; }
+        #cascade-warning { display: none; background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 10px; margin-top: 10px; text-align: center; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Managementul unui Restaurant</h1>
+
+    <div class="menu-bar">
+        <div class="menu-group">
+            <label>Tabele / View-uri:</label>
+            <select id="tableSelect" onchange="incarcaTabel()">
+                <option value="">-- Alege --</option>
+                <optgroup label="Tabele Normale">
+                    <option value="ANGAJATI">Angajati</option>
+                    <option value="CLIENTI">Clienti</option>
+                    <option value="PRODUSE">Produse</option>
+                    <option value="COMENZI">Comenzi</option>
+                    <option value="FURNIZORI">Furnizori</option>
+                    <option value="INGREDIENTE">Ingrediente</option>
+                    <option value="OSPATARI">Ospatari</option>
+                    <option value="BUCATARI">Bucatari</option>
+                    <option value="FUNCTII">Functii</option>
+                </optgroup>
+                <optgroup label="Vizualizari (Cerinta F)">
+                    <option value="v_ingrediente_furnizori">Ingrediente si Furnizori</option>
+                    <option value="v_profit_per_produs">Profit per Produs</option>
+                </optgroup>
+            </select>
+
+            <label>Sortare:</label>
+            <select id="sortSelect" onchange="aplicaSortare()" disabled>
+                <option value="nesortat">-- Nesortat --</option>
+            </select>
+        </div>
+
+        <div class="menu-group">
+            <label>Rapoarte:</label>
+            <button class="btn-green" onclick="incarcaRaport('complex')">Ospatari de Top (C)</button>
+            <button class="btn-green" onclick="incarcaRaport('grup')">Produse complexe (D)</button>
+        </div>
+    </div>
+
+    <div id="status-area">Alege o optiune.</div>
+    
+    <div id="cascade-warning">
+        <strong>ATENTIE (Cerinta E):</strong> Stergerea unui rand va sterge automat datele dependente (ON DELETE CASCADE).
+    </div>
+
+    <div id="tableContainer"></div>
+</div>
+
+<script>
+    let dateGlobale = [];
+    let tipAfisare = ""; 
+    let numeTabelCurent = "";
+
+    // 1. Incarcare tabel sau view
+    async function incarcaTabel() {
+        numeTabelCurent = document.getElementById('tableSelect').value;
+        const warningDiv = document.getElementById('cascade-warning');
+        
+        if (!numeTabelCurent) {
+            document.getElementById('tableContainer').innerHTML = "";
+            warningDiv.style.display = 'none';
+            return;
+        }
+
+        tipAfisare = 'tabel';
+        document.getElementById('status-area').innerText = "Vizualizare: " + numeTabelCurent;
+
+        // Afisare avertisment pentru Cascade
+        if (numeTabelCurent === 'CLIENTI' || numeTabelCurent === 'FURNIZORI') {
+            warningDiv.style.display = 'block';
+        } else {
+            warningDiv.style.display = 'none';
+        }
+
+        try {
+            const res = await fetch(`http://localhost:3000/api/table/${numeTabelCurent}`);
+            
+            if (!res.ok) {
+                const errJson = await res.json();
+                throw new Error(errJson.error || "Eroare necunoscuta");
+            }
+
+            dateGlobale = await res.json();
+            
+            if (!dateGlobale || dateGlobale.length === 0) {
+                 document.getElementById('tableContainer').innerHTML = "<p style='text-align:center; color:red;'>Acest tabel este gol sau nu exista!</p>";
+                 document.getElementById('sortSelect').innerHTML = '<option>-- Indisponibil --</option>';
+                 document.getElementById('sortSelect').disabled = true;
+                 return;
+            }
+
+            configurareSortare(dateGlobale);
+            randeaza(dateGlobale);
+
+        } catch (e) { 
+            alert("Eroare server: " + e.message); 
+            document.getElementById('tableContainer').innerHTML = `<p style='color:red; text-align:center'>Eroare: ${e.message}</p>`;
+        }
+    }
+
+    // 2. Incarcare rapoarte
+    async function incarcaRaport(tip) {
+        tipAfisare = 'raport';
+        let url = (tip === 'complex') ? 'http://localhost:3000/api/raport-complex' : 'http://localhost:3000/api/raport-grup';
+        let numeRaport = (tip === 'complex') ? 'Raport C: Ospatari de top' : 'Raport D: Produse complexe';
+
+        document.getElementById('status-area').innerText = numeRaport;
+        document.getElementById('cascade-warning').style.display = 'none';
+        document.getElementById('tableSelect').value = "";
+        document.getElementById('sortSelect').innerHTML = "<option>-- Indisponibil --</option>";
+        document.getElementById('sortSelect').disabled = true;
+
+        try {
+            const res = await fetch(url);
+            const textRaspuns = await res.text();
+            
+            if (!res.ok) throw new Error("Eroare Server: " + textRaspuns);
+            
+            dateGlobale = JSON.parse(textRaspuns);
+            randeaza(dateGlobale);
+        } catch (e) { alert(e.message); }
+    }
+
+    // 3. Randare tabel HTML
+    function randeaza(data) {
+        if (!data || data.length === 0) {
+            document.getElementById('tableContainer').innerHTML = "<p style='text-align:center'>Nu exista date.</p>";
+            return;
+        }
+
+        const coloane = Object.keys(data[0]);
+        const idCol = coloane[0];
+
+        let html = '<table><thead><tr>';
+        coloane.forEach(c => html += `<th>${c}</th>`);
+        
+        const eViewComplex = (numeTabelCurent === 'v_profit_per_produs');
+        if (tipAfisare === 'tabel' && !eViewComplex) html += '<th style="width: 150px;">Actiuni</th>';
+        
+        html += '</tr></thead><tbody>';
+
+        data.forEach((row, idx) => {
+            html += `<tr>`;
+            coloane.forEach(col => {
+                let val = row[col];
+                if (typeof val === 'string' && val.includes('T') && val.endsWith('Z')) {
+                    val = new Date(val).toLocaleDateString('ro-RO');
+                }
+                val = (val === null || val === undefined) ? '-' : val;
+                html += `<td class="cell-data" data-col="${col}" data-val="${row[col]}">${val}</td>`;
+            });
+
+            if (tipAfisare === 'tabel' && !eViewComplex) {
+                html += `<td>
+                    <button class="btn-edit" onclick="startEdit(this, '${numeTabelCurent}', '${idCol}', '${row[idCol]}')">Edit</button>
+                    <button class="btn-delete" onclick="sterge('${numeTabelCurent}', '${idCol}', '${row[idCol]}')">Sterge</button>
+                </td>`;
+            }
+            html += `</tr>`;
+        });
+
+        html += '</tbody></table>';
+        document.getElementById('tableContainer').innerHTML = html;
+    }
+
+    // Sortare
+    function configurareSortare(data) {
+        if(!data || data.length === 0) return;
+        const sel = document.getElementById('sortSelect');
+        sel.innerHTML = '<option value="nesortat">-- Nesortat --</option>';
+        Object.keys(data[0]).forEach(c => sel.innerHTML += `<option value="${c}">${c}</option>`);
+        sel.disabled = false;
+    }
+
+    function aplicaSortare() {
+        const col = document.getElementById('sortSelect').value;
+        if (col === 'nesortat') return randeaza(dateGlobale);
+        
+        let sortate = [...dateGlobale].sort((a,b) => {
+            if (typeof a[col] === 'number') return a[col] - b[col];
+            return String(a[col]).localeCompare(String(b[col]));
+        });
+        randeaza(sortate);
+    }
+
+    // Editare si Stergere
+    function startEdit(btn, tabel, idCol, idVal) {
+        const row = btn.closest('tr');
+        const cells = row.querySelectorAll('.cell-data');
+
+        cells.forEach(cell => {
+            const valOrig = cell.getAttribute('data-val');
+            const col = cell.getAttribute('data-col');
+            const eId = (col === idCol);
+            
+            // Detectare data sau coloana din Join care nu poate fi editata
+            const eData = col.toUpperCase().includes('DATA') || (typeof valOrig === 'string' && valOrig.includes('T') && valOrig.endsWith('Z'));
+            const eColoanaJoin = (tabel === 'v_ingrediente_furnizori' && col === 'NUME_FURNIZOR');
+
+            let input = '';
+            if (eColoanaJoin) {
+                input = `<input type="text" class="edit-input" value="${valOrig}" disabled style="background:#eee; color:#555">`;
+            } 
+            else if (eData) {
+                let dataSimpla = valOrig ? valOrig.substring(0, 10) : '';
+                input = `<input type="date" class="edit-input" value="${dataSimpla}">`;
+            } 
+            else {
+                input = `<input type="text" class="edit-input" value="${valOrig}">`;
+            }
+            cell.innerHTML = input;
+        });
+
+        btn.parentElement.innerHTML = `
+            <button class="btn-save" onclick="salveaza(this, '${tabel}', '${idCol}', '${idVal}')">Salveaza</button>
+            <button class="btn-cancel" onclick="incarcaTabel()">Anuleaza</button>
+        `;
+    }
+
+    async function salveaza(btn, tabel, idCol, idVal) {
+        const row = btn.closest('tr');
+        const inputs = row.querySelectorAll('input');
+        const updates = {};
+        const cells = row.querySelectorAll('.cell-data');
+
+        inputs.forEach((inp, idx) => {
+            if (!inp.disabled) updates[cells[idx].getAttribute('data-col')] = inp.value;
+        });
+
+        try {
+            await fetch('http://localhost:3000/api/update', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ tableName: tabel, idCol: idCol, idVal: idVal, updates: updates })
+            });
+            incarcaTabel();
+        } catch(e) { alert("Eroare update: " + e.message); }
+    }
+
+    async function sterge(tabel, idCol, idVal) {
+        if (!confirm("Esti sigur ca vrei sa stergi?")) return;
+        try {
+            await fetch(`http://localhost:3000/api/delete/${tabel}/${idCol}/${idVal}`, { method: 'DELETE' });
+            incarcaTabel();
+        } catch(e) { alert("Eroare stergere: " + e.message); }
+    }
+</script>
+
+</body>
+</html>
